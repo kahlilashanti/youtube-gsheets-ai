@@ -1,0 +1,22 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# macOS system files
+.DS_Store
+
+# Credentials
+credentials.json
+
+# VS Code settings
+.vscode/
+
+# Optional: local dev artifacts
+*.local

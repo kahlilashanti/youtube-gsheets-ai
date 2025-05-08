@@ -1,0 +1,19 @@
+{
+  "name": "youtube-googlesheets-scraper",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google-cloud/local-auth": "^3.0.1",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "googleapis": "^148.0.0",
+    "openai": "^4.98.0"
+  }
+}
