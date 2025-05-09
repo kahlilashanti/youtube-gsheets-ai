@@ -28,26 +28,59 @@ async function authenticateGoogleSheets() {
     return google.sheets({ version: 'v4', auth: authClient });
 }
 
-// Fetch trending YouTube videos based on a keyword
-async function fetchTrendingVideos(keyword, maxResults = 25) {
-    const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
-        params: {
-            part: 'snippet',
-            q: keyword,
-            type: 'video',
-            order: 'viewCount',
-            maxResults,
-            key: YOUTUBE_API_KEY,
-        },
-    });
+// Fetch existing video IDs to prevent duplicates
+async function fetchExistingVideoIds(sheets) {
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: GOOGLE_SHEET_ID,
+            range: `${GOOGLE_SHEET_NAME}!A2:A`,
+        });
 
-    return response.data.items.map((item) => ({
-        videoId: item.id.videoId,
-        title: item.snippet.title,
-        description: item.snippet.description,
-        channelTitle: item.snippet.channelTitle,
-        publishTime: item.snippet.publishTime,
-    }));
+        const rows = response.data.values || [];
+        return new Set(rows.map((row) => row[0]));
+    } catch (error) {
+        if (error.code === 400 || error.code === 404) {
+            // Sheet is empty or doesn't exist yet
+            return new Set();
+        }
+        throw error;
+    }
+}
+
+// Fetch trending YouTube videos based on a keyword with pagination
+//This ensures: Only 1 page is fetched. Only 10 results are requested from the YouTube API.
+async function fetchTrendingVideos(keyword, maxPages = 1, maxResultsPerPage = 10) {
+    const allVideos = [];
+    let nextPageToken = null;
+    let page = 0;
+
+    do {
+        const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+            params: {
+                part: 'snippet',
+                q: keyword,
+                type: 'video',
+                order: 'viewCount',
+                maxResults: maxResultsPerPage,
+                pageToken: nextPageToken,
+                key: YOUTUBE_API_KEY,
+            },
+        });
+
+        const items = response.data.items.map((item) => ({
+            videoId: item.id.videoId,
+            title: item.snippet.title,
+            description: item.snippet.description,
+            channelTitle: item.snippet.channelTitle,
+            publishTime: item.snippet.publishTime,
+        }));
+
+        allVideos.push(...items);
+        nextPageToken = response.data.nextPageToken;
+        page += 1;
+    } while (nextPageToken && page < maxPages);
+
+    return allVideos;
 }
 
 // Analyze video content using OpenAI to extract content angles and generate new ideas
@@ -89,11 +122,17 @@ async function main() {
     console.log("🚀 Script started");
     try {
         const keyword = 'AI calorie tracker';
-        const videos = await fetchTrendingVideos(keyword);
         const sheets = await authenticateGoogleSheets();
+        const existingVideoIds = await fetchExistingVideoIds(sheets);
+        const videos = await fetchTrendingVideos(keyword);
         const rows = [];
 
         for (const video of videos) {
+            if (existingVideoIds.has(video.videoId)) {
+                console.log(`⚠️ Skipping duplicate: ${video.videoId}`);
+                continue;
+            }
+
             console.log(`Analyzing: ${video.title}`);
             const analysis = await analyzeContent(video.title, video.description);
             rows.push([
@@ -106,8 +145,12 @@ async function main() {
             ]);
         }
 
-        await appendToGoogleSheet(sheets, rows);
-        console.log('✅ Data successfully appended to Google Sheet.');
+        if (rows.length > 0) {
+            await appendToGoogleSheet(sheets, rows);
+            console.log('✅ New data appended to Google Sheet.');
+        } else {
+            console.log('ℹ️ No new videos to append.');
+        }
     } catch (error) {
         console.error('❌ An error occurred:', error);
     }
